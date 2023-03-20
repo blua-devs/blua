@@ -92,7 +92,7 @@ namespace bLua
                     return entry.value;
                 } else
                 {
-                    Lua.PushObjectOntoStack(_instance, _string);
+                    Lua.PushOntoStack(_instance, _string);
                     bLuaValue result = Lua.PopStackIntoValue(_instance);
 
                     entry.key = _string;
@@ -103,19 +103,19 @@ namespace bLua
                 }
             }
 
-            Lua.PushObjectOntoStack(_instance, _string);
+            Lua.PushOntoStack(_instance, _string);
             return Lua.PopStackIntoValue(_instance);
         }
 
         public static bLuaValue CreateNumber(bLuaInstance _instance, double _double)
         {
-            Lua.PushObjectOntoStack(_instance, _double);
+            Lua.PushOntoStack(_instance, _double);
             return Lua.PopStackIntoValue(_instance);
         }
 
         public static bLuaValue CreateBool(bLuaInstance _instance, bool _bool)
         {
-            Lua.PushObjectOntoStack(_instance, _bool);
+            Lua.PushOntoStack(_instance, _bool);
             return Lua.PopStackIntoValue(_instance);
         }
 
@@ -149,7 +149,7 @@ namespace bLua
 
         public static bLuaValue FromObject(bLuaInstance _instance, object _object)
         {
-            Lua.PushObjectOntoStack(_instance, _object);
+            Lua.PushOntoStack(_instance, _object);
             return Lua.PopStackIntoValue(_instance);
         }
 
@@ -636,55 +636,14 @@ namespace bLua
             }
         }
 
-        public bLuaValue GetNonRaw(string key)
+        public bLuaValue Get<T>(T key)
         {
             return Lua.GetTable(instance, this, key);
         }
 
-        public bLuaValue GetNonRaw(object key)
+        public void Set<TKey, TValue>(TKey _key, TValue _value)
         {
-            return Lua.GetTable(instance, this, key);
-        }
-
-        //synonyms with RawGet
-        public bLuaValue Get(string key)
-        {
-            return Lua.RawGetTable(instance, this, key);
-        }
-
-        public bLuaValue Get(object key)
-        {
-            return Lua.RawGetTable(instance, this, key);
-        }
-
-        public bLuaValue RawGet(object key)
-        {
-            return Lua.RawGetTable(instance, this, key);
-        }
-
-        public bLuaValue RawGet(string key)
-        {
-            return Lua.RawGetTable(instance, this, key);
-        }
-
-        public void Set(bLuaValue key, bLuaValue val)
-        {
-            Lua.SetTable(instance, this, key, val);
-        }
-
-        public void Set(string key, bLuaValue val)
-        {
-            Lua.SetTable(instance, this, key, val);
-        }
-
-        public void Set(string key, object val)
-        {
-            Lua.SetTable(instance, this, key, val);
-        }
-
-        public void Set(object key, object val)
-        {
-            Lua.SetTable(instance, this, key, val);
+            Lua.SetTable(instance, this, _key, _value);
         }
 
         public void Remove(object key)

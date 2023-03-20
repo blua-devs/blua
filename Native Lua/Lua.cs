@@ -1,4 +1,5 @@
 using System;
+using System.Reflection;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using Unity.Profiling;
@@ -58,19 +59,6 @@ namespace bLua.NativeLua
             IntPtr thread = LuaLibAPI.lua_tothread(_state, -1);
             LuaPop(_state, 1);
             return thread;
-        }
-
-        /// <remarks> WARNING!!! All variables declared in an environment must be declared with `local` </remarks>
-        /// <summary> Call this after loading a buffer, but before calling it. This function creates an empty environment for the provided name (overwriting
-        /// an existing one, if there is one) and copies over _G from the main environment so libraries can be accessed. </summary>
-        public static void SetupEnvironmentForBuffer(IntPtr _state, string _environment)
-        {
-            LuaLibAPI.lua_getglobal(_state, _environment); // pushes a new, named environment (_environment). S: (buffer)(newEnv)
-            LuaLibAPI.lua_createtable(_state, 0, 0); // pushes an empty table. S: (buffer)(newEnv)(emptyTable)
-            LuaLibAPI.lua_getglobal(_state, "_G"); // pushes _G. S: (buffer)(newEnv)(emptyTable)(_G)
-            LuaLibAPI.lua_setfield(_state, -2, Lua.StringToIntPtr("__index")); // sets the stack at index to the -1 stack index's value. pops the value. S: (buffer)(newEnv)(emptyTableWith_GAs__index)
-            LuaLibAPI.lua_setmetatable(_state, -2); // pops -1 stack index and sets it to the stack value at index. S: (buffer)(newEnvWith_GAs__index)
-            LuaLibAPI.lua_setupvalue(_state, -2, 1); // assigns -1 stack index to the upvalue for value in stack at index. S: (bufferWithNewEnvUpvalue)
         }
 
         public static IntPtr StringToIntPtr(string _string)
@@ -137,52 +125,6 @@ namespace bLua.NativeLua
         #endregion // Miscellaneous
 
         #region Push (Stack)
-        public static void PushObjectOntoStack(bLuaInstance _instance, bool _bool)
-        {
-            LuaLibAPI.lua_checkstack(_instance.state, 1);
-
-            LuaLibAPI.lua_pushboolean(_instance.state, _bool ? 1 : 0);
-        }
-
-        public static void PushObjectOntoStack(bLuaInstance _instance, double _double)
-        {
-            LuaLibAPI.lua_checkstack(_instance.state, 1);
-
-            LuaLibAPI.lua_pushnumber(_instance.state, _double);
-        }
-
-        public static void PushObjectOntoStack(bLuaInstance _instance, float _double)
-        {
-            LuaLibAPI.lua_checkstack(_instance.state, 1);
-
-            LuaLibAPI.lua_pushnumber(_instance.state, (double)_double);
-        }
-
-        public static void PushObjectOntoStack(bLuaInstance _instance, int _int)
-        {
-            LuaLibAPI.lua_checkstack(_instance.state, 1);
-
-            LuaLibAPI.lua_pushinteger(_instance.state, _int);
-        }
-
-        public static void PushString(IntPtr _state, string _string)
-        {
-            byte[] b = StrToUTF8(_string);
-            LuaLibAPI.lua_pushlstring(_state, StringToIntPtr(_string), (ulong)b.Length);
-        }
-
-        public static void PushObjectOntoStack(bLuaInstance _instance, string _d)
-        {
-            LuaLibAPI.lua_checkstack(_instance.state, 1);
-
-            if (_d == null)
-            {
-                PushNil(_instance);
-                return;
-            }
-            PushString(_instance.state, _d);
-        }
-
         public static void PushNil(bLuaInstance _instance)
         {
             LuaLibAPI.lua_checkstack(_instance.state, 1);
@@ -205,6 +147,52 @@ namespace bLua.NativeLua
             LuaLibAPI.lua_pushcclosure(_instance.state, Marshal.GetFunctionPointerForDelegate(_fn), _upvalues.Length);
         }
 
+        public static void PushClosure<T>(bLuaInstance _instance, T _func) where T : MulticastDelegate
+        {
+            MethodInfo methodInfo = _func.Method;
+
+            ParameterInfo[] methodParams = methodInfo.GetParameters();
+            MethodCallInfo.ParamType[] argTypes = new MethodCallInfo.ParamType[methodParams.Length];
+            object[] defaultArgs = new object[methodParams.Length];
+            for (int i = 0; i != methodParams.Length; ++i)
+            {
+                argTypes[i] = bLuaUserData.SystemTypeToParamType(methodParams[i].ParameterType);
+                if (i == methodParams.Length - 1 && methodParams[i].GetCustomAttribute(typeof(ParamArrayAttribute)) != null)
+                {
+                    argTypes[i] = MethodCallInfo.ParamType.Params;
+                }
+
+                if (methodParams[i].HasDefaultValue)
+                {
+                    defaultArgs[i] = methodParams[i].DefaultValue;
+                }
+                else if (argTypes[i] == MethodCallInfo.ParamType.LuaValue)
+                {
+                    defaultArgs[i] = bLuaValue.Nil;
+                }
+                else
+                {
+                    defaultArgs[i] = null;
+                }
+            }
+
+            LuaCFunction fn = bLuaInstance.CallDelegate;
+            bLuaValue[] upvalues = new bLuaValue[1] { bLuaValue.CreateNumber(_instance, _instance.s_methods.Count) };
+
+            DelegateCallInfo methodCallInfo = new DelegateCallInfo()
+            {
+                methodInfo = methodInfo,
+                returnType = bLuaUserData.SystemTypeToParamType(methodInfo.ReturnType),
+                argTypes = argTypes,
+                defaultArgs = defaultArgs,
+                closure = bLuaValue.CreateClosure(_instance, fn, upvalues),
+                multicastDelegate = _func
+            };
+            _instance.s_methods.Add(methodCallInfo);
+
+            PushClosure(_instance, fn, upvalues);
+        }
+
         public static void PushNewTable(bLuaInstance _instance, int _reserveArray = 0, int _reserveTable = 0)
         {
             LuaLibAPI.lua_checkstack(_instance.state, 1);
@@ -212,12 +200,18 @@ namespace bLua.NativeLua
             LuaLibAPI.lua_createtable(_instance.state, _reserveArray, _reserveTable);
         }
 
-        public static void PushObjectOntoStack(bLuaInstance _instance, object _object)
+        public static void PushOntoStack(bLuaInstance _instance, object _object)
         {
             bLuaValue dynValue = _object as bLuaValue;
             if (dynValue != null)
             {
                 PushStack(_instance, dynValue);
+                return;
+            }
+            else if (_object.GetType().IsDefined(typeof(bLuaUserDataAttribute), false))
+            {
+                bLuaValue ud = bLuaValue.CreateUserData(_instance, _object);
+                Lua.PushStack(_instance, ud);
                 return;
             }
 
@@ -245,11 +239,16 @@ namespace bLua.NativeLua
             }
             else if (_object is string)
             {
-                PushString(_instance.state, (string)_object);
+                byte[] b = StrToUTF8((string)_object);
+                LuaLibAPI.lua_pushlstring(_instance.state, StringToIntPtr((string)_object), (ulong)b.Length);
             }
             else if (_object is LuaCFunction)
             {
                 LuaPushCFunction(_instance, _object as LuaCFunction);
+            }
+            else if (_object is MulticastDelegate) // Func<> and Action<>
+            {
+                PushClosure(_instance, _object as MulticastDelegate);
             }
             else
             {
@@ -495,88 +494,28 @@ namespace bLua.NativeLua
         public static bLuaValue NewString(bLuaInstance _instance, string val)
         {
             LuaLibAPI.lua_checkstack(_instance.state, 1);
-            PushString(_instance.state, val);
+            PushOntoStack(_instance, val);
             return PopStackIntoValue(_instance);
         }
         #endregion // New Values
 
         #region Tables
-        public static bLuaValue GetTable(bLuaInstance _instance, bLuaValue tbl, string key)
+        public static bLuaValue GetTable<T>(bLuaInstance _instance, bLuaValue _table, T _key)
         {
-            PushStack(_instance, tbl);
-            PushObjectOntoStack(_instance, key);
+            PushStack(_instance, _table);
+            PushOntoStack(_instance, _key);
             DataType t = (DataType)LuaLibAPI.lua_gettable(_instance.state, -2);
-            var result = PopStackIntoValue(_instance); //pop the result value out.
+            var result = PopStackIntoValue(_instance);
             result.dataType = t;
-            PopStack(_instance); //pop the table out and discard it.
-            return result;
-        }
-
-        public static bLuaValue GetTable(bLuaInstance _instance, bLuaValue tbl, object key)
-        {
-            PushStack(_instance, tbl);
-            PushObjectOntoStack(_instance, key);
-            DataType t = (DataType)LuaLibAPI.lua_gettable(_instance.state, -2);
-            var result = PopStackIntoValue(_instance); //pop the result value out.
-            result.dataType = t;
-            PopStack(_instance); //pop the table out and discard it.
-            return result;
-        }
-
-        public static bLuaValue RawGetTable(bLuaInstance _instance, bLuaValue tbl, string key)
-        {
-            PushStack(_instance, tbl);
-            PushObjectOntoStack(_instance, key);
-            DataType t = (DataType)LuaLibAPI.lua_rawget(_instance.state, -2);
-            var result = PopStackIntoValue(_instance); //pop the result value out.
-            result.dataType = t;
-            PopStack(_instance); //pop the table out and discard it.
-            return result;
-        }
-
-        public static bLuaValue RawGetTable(bLuaInstance _instance, bLuaValue _tbl, object _key)
-        {
-            PushStack(_instance, _tbl);
-            PushObjectOntoStack(_instance, _key);
-            DataType t = (DataType)LuaLibAPI.lua_rawget(_instance.state, -2);
-            var result = PopStackIntoValue(_instance); //pop the result value out.
-            result.dataType = t;
-            PopStack(_instance); //pop the table out and discard it.
-            return result;
-        }
-
-        public static void SetTable(bLuaInstance _instance, bLuaValue tbl, bLuaValue key, bLuaValue val)
-        {
-            PushStack(_instance, tbl);
-            PushStack(_instance, key);
-            PushStack(_instance, val);
-            LuaLibAPI.lua_settable(_instance.state, -3);
             PopStack(_instance);
+            return result;
         }
 
-        public static void SetTable(bLuaInstance _instance, bLuaValue tbl, string key, bLuaValue val)
+        public static void SetTable<TKey, TValue>(bLuaInstance _instance, bLuaValue _table, TKey _key, TValue _value)
         {
-            PushStack(_instance, tbl);
-            PushObjectOntoStack(_instance, key);
-            PushStack(_instance, val);
-            LuaLibAPI.lua_settable(_instance.state, -3);
-            PopStack(_instance);
-        }
-
-        public static void SetTable(bLuaInstance _instance, bLuaValue tbl, string key, object val)
-        {
-            PushStack(_instance, tbl);
-            PushObjectOntoStack(_instance, key);
-            PushObjectOntoStack(_instance, val);
-            LuaLibAPI.lua_settable(_instance.state, -3);
-            PopStack(_instance);
-        }
-
-        public static void SetTable(bLuaInstance _instance, bLuaValue tbl, object key, object val)
-        {
-            PushStack(_instance, tbl);
-            PushObjectOntoStack(_instance, key);
-            PushObjectOntoStack(_instance, val);
+            PushOntoStack(_instance, _table);
+            PushOntoStack(_instance, _key);
+            PushOntoStack(_instance, _value);
             LuaLibAPI.lua_settable(_instance.state, -3);
             PopStack(_instance);
         }
@@ -624,7 +563,7 @@ namespace bLua.NativeLua
         {
             PushStack(_instance, array);
             int len = (int)LuaLibAPI.lua_rawlen(_instance.state, -1);
-            PushObjectOntoStack(_instance, newVal);
+            PushOntoStack(_instance, newVal);
             LuaLibAPI.lua_seti(_instance.state, -2, len + 1);
             PopStack(_instance);
         }

@@ -12,11 +12,8 @@ using UnityEditor;
 [bLuaUserData]
 public class bLuaGlobalLibrary
 {
-    /// <summary> Called whenever the print() function is called in this library. </summary>
-    public static UnityEvent<string> OnLog = new UnityEvent<string>();
 
 
-    #region Fields
     /// <summary> Returns a Lua-accessible version of Unity's Time.time. Also works when not in play mode. </summary>
     public static float time
     {
@@ -34,15 +31,4 @@ public class bLuaGlobalLibrary
 #endif
         }
     }
-    #endregion // Fields
-
-    #region Methods
-    /// <summary> Prints a string to Unity's logs. </summary>
-    public static void print(string _string)
-    {
-        Debug.Log(_string);
-
-        OnLog.Invoke(_string);
-    }
-    #endregion // Methods
 }

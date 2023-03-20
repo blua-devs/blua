@@ -58,11 +58,43 @@ namespace bLua.NativeLua
         [DllImport(Lua.dllName)]
         public static extern void lua_pushinteger(System.IntPtr state, int n);
 
+        public static void lua_pushint64(System.IntPtr state, long n)
+        {
+            int r;
+            if (!int.TryParse(n.ToString(), out r))
+            {
+                r = int.MaxValue;
+            }
+            lua_pushinteger(state, r);
+        }
+        public static void lua_pushuint(System.IntPtr state, uint n)
+        {
+            lua_pushinteger(state, unchecked((int)n));
+        }
+        public static void lua_pushuint64(System.IntPtr state, ulong n)
+        {
+            lua_pushint64(state, unchecked((long)n + long.MinValue));
+        }
+
         [DllImport(Lua.dllName, CharSet = CharSet.Ansi)]
         public static extern void lua_pushlstring(System.IntPtr state, System.IntPtr s, ulong len);
 
+        public static void lua_pushstring(System.IntPtr state, string str)
+        {
+            lua_pushlstring(state, Lua.StringToIntPtr(str), (ulong)Lua.StrToUTF8(str).Length);
+        }
+        public static void lua_pushbytes(System.IntPtr state, byte[] bytes)
+        {
+            lua_pushstring(state, System.Text.Encoding.Default.GetString(bytes));
+        }
+
         [DllImport(Lua.dllName)]
         public static extern void lua_pushboolean(System.IntPtr state, int b);
+
+        public static void lua_pushboolean(System.IntPtr state, bool b)
+        {
+            lua_pushboolean(state, b ? 1 : 0);
+        }
 
         [DllImport(Lua.dllName)]
         public static extern void lua_pushvalue(System.IntPtr state, int index);

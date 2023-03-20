@@ -60,9 +60,11 @@ namespace bLua
         /// programs do not crash) and therefore can compromise otherwise secure code." </remarks>
         /// <summary> The Debug Library (https://www.lua.org/manual/5.4/manual.html#6.10). </summary>
         Debug = 512,
-        /// <summary> Includes `wait(t)`, `spawn(fn)`, and `delay(t, fn)` functions that can be used for better threading and coroutine control in Lua. NOTE: 
+        /// <summary> Includes `wait(t)`, `spawn(fn)`, and `delay(t, fn)` function(s) that can be used for better threading and coroutine control in Lua. NOTE: 
         /// Feature.Coroutines needs to be enabled for this feature to work. </summary>
-        ThreadMacros = 1024
+        ThreadMacros = 1024,
+        /// <summary> Includes `print(s)` function(s) as globals. </summary>
+        HelperMacros = 2048,
     }
 
     /// <summary> Sandboxes are groupings of features that let you select premade feature lists for your bLua environment. </summary>
@@ -82,7 +84,8 @@ namespace bLua
             | Feature.IO
             | Feature.OS
             | Feature.Debug
-            | Feature.ThreadMacros,
+            | Feature.ThreadMacros
+            | Feature.HelperMacros,
         /// <remarks> WARNING! Some of these features include developer warnings, please review the remarks on individual features. </remarks>
         /// <summary> Includes most Lua and bLua features, specifically ones that might be used commonly in modding. </summary>
         BasicModding = Feature.BasicLibrary
@@ -92,7 +95,8 @@ namespace bLua
             | Feature.Tables
             | Feature.MathLibrary
             | Feature.IO
-            | Feature.ThreadMacros,
+            | Feature.ThreadMacros
+            | Feature.HelperMacros,
         /// <summary> Includes basic Lua and bLua features, avoiding ones that could be potentially used maliciously. </summary>
         Safe = Feature.BasicLibrary
             | Feature.Coroutines
@@ -101,6 +105,7 @@ namespace bLua
             | Feature.Tables
             | Feature.MathLibrary
             | Feature.ThreadMacros
+            | Feature.HelperMacros
     }
 
     /// <summary> Contains settings for the bLua runtime. </summary>
@@ -148,6 +153,8 @@ namespace bLua
 
         bLuaSettings settings = new bLuaSettings();
 
+        UnityEvent<string> OnPrint = new UnityEvent<string>();
+
         /// <summary> Contains the current Lua state (https://www.lua.org/manual/5.4/manual.html#lua_newstate). </summary>
         public IntPtr state { get; private set; }
 
@@ -159,7 +166,7 @@ namespace bLua
 
         Dictionary<string, bLuaValue> lookups = new Dictionary<string, bLuaValue>();
 
-        //whenever we add a method we just add it to this list to be indexed.
+        // Whenever we add a method we just add it to this list to be indexed
         public List<MethodCallInfo> s_methods = new List<MethodCallInfo>();
         public List<PropertyCallInfo> s_properties = new List<PropertyCallInfo>();
         public List<FieldCallInfo> s_fields = new List<FieldCallInfo>();
@@ -225,6 +232,8 @@ namespace bLua
             SceneManager.activeSceneChanged -= OnActiveSceneChanged; // This can be done safely
             SceneManager.activeSceneChanged += OnActiveSceneChanged;
 
+            OnPrint.AddListener((s) => Debug.Log(s));
+
             // Create a new state for this instance
             state = LuaXLibAPI.luaL_newstate();
             instanceRegistry.Add(state, this);
@@ -237,6 +246,7 @@ namespace bLua
             }
 
             // Setup the bLua Global Library
+            bLuaUserData.Register(this, typeof(bLuaGlobalLibrary));
             SetGlobal("blua", bLuaValue.CreateUserData(this, new bLuaGlobalLibrary()));
 
             #region Feature Handling
@@ -261,9 +271,9 @@ namespace bLua
                     @"return function(fn, a, b, c, d, e, f, g, h)
                         local co = coroutine.create(fn)
                         local res, error = coroutine.resume(co, a, b, c, d, e, f, g, h)
-                        --blua.print('COROUTINE:: call co: %s -> %s -> %s', type(co), type(fn), coroutine.status(co))
+                        --print('COROUTINE:: call co: %s -> %s -> %s', type(co), type(fn), coroutine.status(co))
                         if not res then
-                            blua.print(string.format('error in co-routine: %s', error))
+                            print(string.format('error in co-routine: %s', error))
                         end
                         if coroutine.status(co) ~= 'dead' then
                             builtin_coroutines[#builtin_coroutines+1] = co
@@ -275,7 +285,7 @@ namespace bLua
                         for _,co in ipairs(builtin_coroutines) do
                             local res, error = coroutine.resume(co)
                             if not res then
-                                blua.print(string.format('error in co-routine: %s', error))
+                                print(string.format('error in co-routine: %s', error))
                             end
                             if coroutine.status(co) == 'dead' then
                                 allRunning = false
@@ -298,7 +308,7 @@ namespace bLua
                         for _,co in ipairs(builtin_coroutines) do
                             local res, error = coroutine.close(co)
                             if not res then
-                                blua.print(string.format('error closing co-routine: %s', error))
+                                print(string.format('error closing co-routine: %s', error))
                             end
                         end
                         builtin_coroutines = {}
@@ -367,7 +377,7 @@ namespace bLua
                         local co = coroutine.create(fn)
                         local res, error = coroutine.resume(co, a, b, c, d, e, f, g, h)
                         if not res then
-                            blua.print(string.format('error in co-routine spawn: %s', error))
+                            print(string.format('error in co-routine spawn: %s', error))
                         end
                         if coroutine.status(co) ~= 'dead' then
                             builtin_coroutines[#builtin_coroutines+1] = co
@@ -380,6 +390,11 @@ namespace bLua
                             fn()
                         end)
                     end");
+            }
+
+            if (FeatureEnabled(Feature.HelperMacros))
+            {
+                SetGlobal<Action<string>>("print", (s) => OnPrint.Invoke(s));
             }
             #endregion // Feature Handling
 
@@ -578,9 +593,9 @@ namespace bLua
             return result;
         }
 
-        public void SetGlobal(string _key, bLuaValue _value)
+        public void SetGlobal<T>(string _key, T _object)
         {
-            Lua.PushStack(this, _value);
+            Lua.PushOntoStack(this, _object);
             LuaLibAPI.lua_setglobal(state, _key);
         }
         #endregion // Globals
@@ -619,24 +634,24 @@ namespace bLua
 
         /// <summary> Loads a string of Lua code and runs it. </summary>
         /// <param name="_code">The string of code to run.</param>
-        public bLuaValue DoString(string _code)
+        public bLuaValue DoString(string _code, bLuaValue _environment = null)
         {
-            return DoBuffer("code", _code);
+            return DoBuffer("code", _code, _environment);
         }
 
         /// <summary> Loads a buffer as a Lua chunk and runs it. </summary>
         /// <param name="_name">The chunk name, used for debug information and error messages.</param>
         /// <param name="_text">The Lua code to load.</param>
-        public bLuaValue DoBuffer(string _name, string _text)
+        public bLuaValue DoBuffer(string _name, string _text, bLuaValue _environment = null)
         {
-            ExecBuffer(_name, _text, 1);
+            ExecBuffer(_name, _text, 1, _environment);
             return Lua.PopStackIntoValue(this);
         }
 
         /// <summary> Loads a buffer as a Lua chunk and runs it. </summary>
         /// <param name="_name">The chunk name, used for debug information and error messages.</param>
         /// <param name="_text">The Lua code to load.</param>
-        public void ExecBuffer(string _name, string _text, int _nresults = 0, string _environment = "")
+        public void ExecBuffer(string _name, string _text, int _nresults = 0, bLuaValue _environment = null)
         {
             if (!initialized)
             {
@@ -654,13 +669,14 @@ namespace bLua
                     throw new LuaException(msg);
                 }
 
-                if (string.IsNullOrWhiteSpace(_environment))
+                if (_environment != null)
                 {
-                    _environment = "";
-                }
-                if (_environment != "")
-                {
-                    Lua.SetupEnvironmentForBuffer(state, _environment);
+                    Lua.PushStack(this, _environment); // pushes the given table. S: (buffer)(env)
+                    LuaLibAPI.lua_createtable(state, 0, 0); // pushes an empty table. S: (buffer)(env)(emptyTable)
+                    LuaLibAPI.lua_getglobal(state, "_G"); // pushes _G. S: (buffer)(newEenvnv)(emptyTable)(_G)
+                    LuaLibAPI.lua_setfield(state, -2, Lua.StringToIntPtr("__index")); // sets the stack at index to the -1 stack index's value. pops the value. S: (buffer)(env)(emptyTableWith_GAs__index)
+                    LuaLibAPI.lua_setmetatable(state, -2); // pops -1 stack index and sets it to the stack value at index. S: (buffer)(envWith_GAs__index)
+                    LuaLibAPI.lua_setupvalue(state, -2, 1); // assigns -1 stack index to the upvalue for value in stack at index. S: (bufferWithEnvUpvalue)
                 }
 
                 using (Lua.s_profileLuaCallInner.Auto())
@@ -695,7 +711,7 @@ namespace bLua
 
                 foreach (var arg in _args)
                 {
-                    Lua.PushObjectOntoStack(this, arg);
+                    Lua.PushOntoStack(this, arg);
                 }
 
                 int result;
@@ -748,7 +764,103 @@ namespace bLua
         }
 
         #region C Functions called from Lua
-        public static int CallFunction(IntPtr _state)
+        public static int CallDelegate(IntPtr _state)
+        {
+            IntPtr mainThreadState = Lua.GetMainThread(_state);
+            bLuaInstance mainThreadInstance = GetInstanceByState(mainThreadState);
+
+            var stateBack = mainThreadInstance.state;
+            try
+            {
+                mainThreadInstance.state = _state;
+
+                int stackSize = LuaLibAPI.lua_gettop(_state);
+
+                int n = LuaLibAPI.lua_tointegerx(_state, Lua.UpValueIndex(1), IntPtr.Zero);
+
+                if (n < 0 || n >= mainThreadInstance.s_methods.Count)
+                {
+                    mainThreadInstance.Error($"Illegal method index: {n}");
+                    return 0;
+                }
+
+                MethodCallInfo methodCallInfo = mainThreadInstance.s_methods[n];
+                DelegateCallInfo info = methodCallInfo as DelegateCallInfo;
+
+                object[] parms = null;
+                int parmsIndex = 0;
+
+                int parametersLength = info.argTypes.Length;
+                if (parametersLength > 0 && info.argTypes[parametersLength - 1] == MethodCallInfo.ParamType.Params)
+                {
+                    parametersLength--;
+                    if (stackSize > parametersLength)
+                    {
+                        parms = new object[(stackSize) - parametersLength];
+                        parmsIndex = parms.Length - 1;
+                    }
+                }
+
+                object[] args = new object[info.argTypes.Length];
+                int argIndex = args.Length - 1;
+
+                // Set the last args index to be the parameters array
+                if (parms != null)
+                {
+                    args[argIndex--] = parms;
+                }
+
+                while (argIndex > stackSize - 1)
+                {
+                    // Backfill any arguments with defaults.
+                    args[argIndex] = info.defaultArgs[argIndex];
+                    --argIndex;
+                }
+                while (stackSize - 1 > argIndex)
+                {
+                    // Backfill the parameters with values from the Lua stack
+                    if (parms != null)
+                    {
+                        parms[parmsIndex--] = Lua.PopStackIntoObject(mainThreadInstance);
+                    }
+                    else
+                    {
+                        Lua.PopStack(mainThreadInstance);
+                    }
+                    --stackSize;
+                }
+
+                while (stackSize > 0)
+                {
+                    args[argIndex] = bLuaUserData.PopStackIntoParamType(mainThreadInstance, info.argTypes[argIndex]);
+
+                    --stackSize;
+                    --argIndex;
+                }
+
+                object result = info.multicastDelegate.DynamicInvoke(args);
+
+                bLuaUserData.PushReturnTypeOntoStack(mainThreadInstance, info.returnType, result);
+                return 1;
+
+            }
+            catch (Exception e)
+            {
+                var ex = e.InnerException;
+                if (ex == null)
+                {
+                    ex = e;
+                }
+                mainThreadInstance.Error($"Error calling delegate: {ex.Message}", $"{ex.StackTrace}");
+                return 0;
+            }
+            finally
+            {
+                mainThreadInstance.state = stateBack;
+            }
+        }
+
+        public static int CallUserDataFunction(IntPtr _state)
         {
             IntPtr mainThreadState = Lua.GetMainThread(_state);
             bLuaInstance mainThreadInstance = GetInstanceByState(mainThreadState);
@@ -800,7 +912,7 @@ namespace bLua
 
                 while (argIndex > stackSize - 2)
                 {
-                    //backfill any arguments with defaults.
+                    // Backfill any arguments with defaults.
                     args[argIndex] = info.defaultArgs[argIndex];
                     --argIndex;
                 }
@@ -871,7 +983,7 @@ namespace bLua
             }
         }
 
-        public static int CallStaticFunction(IntPtr _state)
+        public static int CallStaticUserDataFunction(IntPtr _state)
         {
             IntPtr mainThreadState = Lua.GetMainThread(_state);
             bLuaInstance mainThreadInstance = GetInstanceByState(mainThreadState);
@@ -910,7 +1022,7 @@ namespace bLua
 
                 while (argIndex > stackSize - 1)
                 {
-                    //backfill any arguments with nulls.
+                    // Backfill any arguments with nulls.
                     args[argIndex] = info.defaultArgs[argIndex];
                     --argIndex;
                 }
@@ -988,7 +1100,7 @@ namespace bLua
                             return 1;
                         case UserDataRegistryEntry.PropertyEntry.Type.Property:
                             {
-                                //get the iuservalue for the userdata onto the stack.
+                                // Get the iuservalue for the userdata onto the stack.
                                 LuaLibAPI.lua_checkstack(_state, 1);
                                 LuaLibAPI.lua_getiuservalue(_state, 1, 1);
 
@@ -1002,7 +1114,7 @@ namespace bLua
                             }
                         case UserDataRegistryEntry.PropertyEntry.Type.Field:
                             {
-                                //get the iuservalue for the userdata onto the stack.
+                                // Get the iuservalue for the userdata onto the stack.
                                 LuaLibAPI.lua_checkstack(_state, 1);
                                 LuaLibAPI.lua_getiuservalue(_state, 1, 1);
                                 int instanceIndex = Lua.PopInteger(mainThreadInstance);
@@ -1129,5 +1241,25 @@ namespace bLua
             return 0;
         }
         #endregion // C Functions called from Lua
+
+        #region Userdata
+        /// <summary> Registers all C# types in all assemblies with the [bLuaUserData] attribute as Lua userdata on this particular instance. </summary>
+        public void RegisterAllAssembliesUserData()
+        {
+            bLuaUserData.RegisterAllAssemblies(this);
+        }
+
+        /// <summary> Registers all C# types in a given assembly with the [bLuaUserData] attribute as Lua userdata on this particular instance. </summary>
+        public void RegisterAssemblyUserData(System.Reflection.Assembly _assembly)
+        {
+            bLuaUserData.RegisterAssembly(this, _assembly);
+        }
+
+        /// <summary> Registers a given C# type as Lua userdata on this particular instance. </summary>
+        public void RegisterUserData(Type _type)
+        {
+            bLuaUserData.Register(this, _type);
+        }
+        #endregion
     }
 } // bLua namespace
