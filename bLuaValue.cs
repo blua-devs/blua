@@ -4,31 +4,20 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Assertions;
 using bLua.NativeLua;
+using bLua.Internal;
 
 namespace bLua
 {
     public class bLuaValue : IDisposable
     {
-#if UNITY_EDITOR
-        public static int nLive = 0;
-        public static int nLiveHighWater = 0;
-#endif
-
-        public static int nTotalCreated = 0;
+        public static int totalCreated = 0;
 
         public static int NOREF = -2;
         public static int REFNIL = -1;
 
-        public int refid = NOREF;
-        public DataType dataType = DataType.Unknown;
+        public int referenceID = NOREF;
 
-        public int ReferenceID
-        {
-            get
-            {
-                return refid;
-            }
-        }
+        public DataType dataType = DataType.Unknown;
 
         bLuaInstance instance;
 
@@ -48,24 +37,24 @@ namespace bLua
             return Nil;
         }
 
-        public static bool IsNilOrNull(bLuaValue val)
+        public static bool IsNilOrNull(bLuaValue _value)
         {
-            return val == null || val.refid == REFNIL;
+            return _value == null || _value.referenceID == REFNIL;
         }
 
         public static bool NotNilOrNull(bLuaValue val)
         {
-            return val != null && val.refid != REFNIL;
+            return val != null && val.referenceID != REFNIL;
         }
 
         public bool IsNil()
         {
-            return refid == REFNIL;
+            return referenceID == REFNIL;
         }
 
         public bool IsNotNil()
         {
-            return refid != REFNIL;
+            return referenceID != REFNIL;
         }
 
         public bool IsTable()
@@ -83,12 +72,12 @@ namespace bLua
             if (_string.Length < 32)
             {
                 uint hash = (uint)_string.GetHashCode();
-                uint n = hash % (uint)_instance.s_stringCache.Length;
-                var entry = _instance.s_stringCache[n];
+                uint n = hash % (uint)_instance.stringCache.Length;
+                var entry = _instance.stringCache[n];
                 if (entry.key == _string)
                 {
                     Assert.AreEqual(entry.key, entry.value.String);
-                    ++_instance.s_stringCacheHit;
+                    ++_instance.stringCacheHit;
                     return entry.value;
                 } else
                 {
@@ -97,8 +86,8 @@ namespace bLua
 
                     entry.key = _string;
                     entry.value = result;
-                    _instance.s_stringCache[n] = entry;
-                    ++_instance.s_stringCacheMiss;
+                    _instance.stringCache[n] = entry;
+                    ++_instance.stringCacheMiss;
                     return result;
                 }
             }
@@ -156,7 +145,7 @@ namespace bLua
         public bLuaValue()
         {
             FinishConstruction();
-            refid = REFNIL;
+            referenceID = REFNIL;
 
             instance = null;
         }
@@ -164,55 +153,40 @@ namespace bLua
         public bLuaValue(bLuaInstance _instance)
         {
             FinishConstruction();
-            refid = REFNIL;
+            referenceID = REFNIL;
             instance = _instance;
         }
 
         public bLuaValue(bLuaInstance _instance, int _refid)
         {
             FinishConstruction();
-            refid = _refid;
+            referenceID = _refid;
             instance = _instance;
         }
 
         void FinishConstruction()
         {
-#if UNITY_EDITOR
-            System.Threading.Interlocked.Increment(ref nLive);
-            if (nLive > nLiveHighWater)
-            {
-                nLiveHighWater = nLive;
-            }
-#endif
-            ++nTotalCreated;
+            ++totalCreated;
         }
 
         ~bLuaValue()
         {
             Dispose(false);
-
-#if UNITY_EDITOR
-            System.Threading.Interlocked.Decrement(ref nLive);
-#endif
         }
 
         public void Dispose()
         {
             Dispose(true);
             System.GC.SuppressFinalize(this);
-
-#if UNITY_EDITOR
-            System.Threading.Interlocked.Decrement(ref nLive);
-#endif
         }
 
-        void Dispose(bool deterministic)
+        void Dispose(bool _deterministic)
         {
-            if (refid != NOREF && refid != REFNIL)
+            if (referenceID != NOREF && referenceID != REFNIL)
             {
-                if (deterministic)
+                if (_deterministic)
                 {
-                    Lua.DestroyDynValue(instance, refid);
+                    Lua.DestroyDynValue(instance, referenceID);
                 }
                 // remnant from C#-managed GC
                 /*
@@ -221,7 +195,7 @@ namespace bLua
                     deleteQueue.Enqueue(refid);
                 }
                 */
-                refid = NOREF;
+                referenceID = NOREF;
             }
         }
 
@@ -429,6 +403,13 @@ namespace bLua
                     return Lua.PopNumber(instance).ToString();
                 case DataType.Boolean:
                     return Lua.PopBool(instance) ? "true" : "false";
+                case DataType.UserData:
+                    bLuaValue v = Lua.PopStackIntoValue(instance);
+                    if (v.Object.GetType().GetMethod("ToString") != null)
+                    {
+                        return v.Object.ToString();
+                    }
+                    goto default;
                 default:
                     Lua.PopStack(instance);
                     return _defaultValue;
@@ -611,11 +592,11 @@ namespace bLua
             }
         }
 
-        public bLuaValue Call(params object[] args)
+        public bLuaValue Call(params object[] _args)
         {
             if (instance != null)
             {
-                return instance.Call(this, args);
+                return instance.Call(this, _args);
             }
             return null;
         }
@@ -636,9 +617,9 @@ namespace bLua
             }
         }
 
-        public bLuaValue Get<T>(T key)
+        public bLuaValue Get<T>(T _key)
         {
-            return Lua.GetTable(instance, this, key);
+            return Lua.GetTable(instance, this, _key);
         }
 
         public void Set<TKey, TValue>(TKey _key, TValue _value)
@@ -646,9 +627,9 @@ namespace bLua
             Lua.SetTable(instance, this, _key, _value);
         }
 
-        public void Remove(object key)
+        public void Remove(object _key)
         {
-            Lua.SetTable(instance, this, key, Nil);
+            Lua.SetTable(instance, this, _key, Nil);
         }
 
         public List<bLuaValue> List()
@@ -796,27 +777,27 @@ namespace bLua
             }
         }
 
-        public void Append(bLuaValue val)
+        public void Append(bLuaValue _value)
         {
-            Lua.AppendArray(instance, this, val);
+            Lua.AppendArray(instance, this, _value);
         }
 
-        public void Append(object val)
+        public void Append(object _value)
         {
-            Lua.AppendArray(instance, this, val);
+            Lua.AppendArray(instance, this, _value);
         }
 
-        public static void RunDispose(List<bLuaValue> list)
+        public static void RunDispose(List<bLuaValue> _list)
         {
-            foreach (var item in list)
+            foreach (var item in _list)
             {
                 item.Dispose();
             }
         }
 
-        public static void RunDispose(Dictionary<string, bLuaValue> dict)
+        public static void RunDispose(Dictionary<string, bLuaValue> _dict)
         {
-            foreach (var item in dict)
+            foreach (var item in _dict)
             {
                 item.Value.Dispose();
             }
