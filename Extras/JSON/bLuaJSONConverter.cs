@@ -67,15 +67,26 @@ namespace bLua.JSON
 
         public static bLuaValue JSONToBLuaTable(bLuaInstance _instance, string _json)
         {
-			if (_instance == null || string.IsNullOrWhiteSpace(_json) || _json.Length == 0 || !_json.StartsWith(beginTable) || !_json.EndsWith(endTable))
+			if (_instance == null || string.IsNullOrWhiteSpace(_json) || _json.Length == 0)
 			{
+				// Invalid JSON
 				return bLuaValue.CreateNil();
 			}
 
-			_json = _json.Substring(1, _json.Length - 1); // Cut off the { at the beginning
+			if (!_json.StartsWith(beginTable) && !_json.StartsWith(beginArray))
+			{
+				// Not a table or array (you cannot JSON convert bLuaValues that are not a table/array)
+				return bLuaValue.CreateNil();
+            }
+
+			bool isArray = _json.StartsWith(beginArray);
+			if (_json.StartsWith(beginTable) || _json.StartsWith(beginArray))
+			{
+				_json = _json.Substring(1, _json.Length - 1); // Cut off the { or [ at the beginning of the table or array
+            }
 
 			StringReader sr = new StringReader(_json);
-			bLuaValue table = JSONToBLuaTable(_instance, sr);
+			bLuaValue table = JSONToBLuaTable(_instance, sr, isArray);
 
 			return table;
         }
@@ -315,7 +326,7 @@ namespace bLua.JSON
             {
 				string s = string.Empty;
 				c = (char)_sr.Read();
-				while (c != '"' && c != endTable)
+				while (c != '"' && c != endTable && c != endArray)
 				{
 					s += c;
 
@@ -336,7 +347,7 @@ namespace bLua.JSON
 			else if (c.IsJSONNumber())
             {
 				string n = string.Empty;
-				while (c.IsJSONNumber() && c != endTable)
+				while (c.IsJSONNumber() && c != endTable && c != endArray)
                 {
 					n += c;
 

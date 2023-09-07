@@ -5,14 +5,6 @@ using UnityEngine;
 
 namespace bLua.Internal
 {
-    public class LuaException : Exception
-    {
-        public LuaException(string message) : base(message)
-        {
-
-        }
-    }
-
     public static class bLuaError
     {
         public const string error_indexingUserdata = "error indexing userdata: ";
@@ -29,6 +21,7 @@ namespace bLua.Internal
 
         public const string error_callingFunction = "error calling function: ";
         public const string error_callingDelegate = "error calling delegate: ";
+        public const string error_inBuffer = "error in buffer: ";
         public const string error_inFunctionCall = "error in function call: ";
         public const string error_inMetamethodCall = "error in function call: ";
         public const string error_setProperty = "failed to set property: ";
@@ -51,5 +44,7 @@ namespace bLua.Internal
         public const string error_operationEquality = "failed equals operation (==) on types: ";
         public const string error_operationLessThan = "failed less than/greater than operation (< / >) on types: ";
         public const string error_operationLessThanOrEqual = "failed less than or equal/greater than or equal operation (<= / >=) on types: ";
+
+        public const string error_stackTracebackPrepend = "stack traceback:\n\t";
     }
 } // bLua.Internal namespace

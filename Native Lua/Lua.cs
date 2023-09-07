@@ -112,15 +112,14 @@ namespace bLua.NativeLua
             return (DataType)LuaLibAPI.lua_type(_instance.state, -1);
         }
 
+        /// <summary> Returns a stack trace from the top of the stack. </summary>
+        /// <param name="_message">An optional message to be prepended to the returned trace</param>
+        /// <param name="_level">The level in the stack to start tracing from</param>
+        /// <returns></returns>
         public static string TraceMessage(bLuaInstance _instance, string _message = null, int _level = 1)
         {
-            if (_message == null)
-            {
-                _message = "stack";
-            }
             LuaLibAPI.lua_checkstack(_instance.state, 1);
-
-            LuaXLibAPI.luaL_traceback(_instance.state, _instance.state, _message, _level);
+            LuaXLibAPI.luaL_traceback(_instance.state, _instance.state, _message != null ? _message : "", _level);
             return PopString(_instance);
         }
         #endregion // Miscellaneous
@@ -146,6 +145,15 @@ namespace bLua.NativeLua
             }
 
             LuaLibAPI.lua_pushcclosure(_instance.state, Marshal.GetFunctionPointerForDelegate(_fn), _upvalues.Length);
+        }
+
+        public static void PushClosure(bLuaInstance _instance, GlobalMethodCallInfo _globalMethodCallInfo)
+        {
+            LuaCFunction fn = bLuaInstance.CallGlobalMethod;
+            bLuaValue[] upvalues = new bLuaValue[1] { bLuaValue.CreateNumber(_instance, _instance.registeredMethods.Count) };
+            _instance.registeredMethods.Add(_globalMethodCallInfo);
+
+            PushClosure(_instance, fn, upvalues);
         }
 
         public static void PushClosure<T>(bLuaInstance _instance, T _func) where T : MulticastDelegate
@@ -197,7 +205,6 @@ namespace bLua.NativeLua
         public static void PushNewTable(bLuaInstance _instance, int _reserveArray = 0, int _reserveTable = 0)
         {
             LuaLibAPI.lua_checkstack(_instance.state, 1);
-
             LuaLibAPI.lua_createtable(_instance.state, _reserveArray, _reserveTable);
         }
 
@@ -252,6 +259,10 @@ namespace bLua.NativeLua
             {
                 LuaPushCFunction(_instance, _object as LuaCFunction);
             }
+            else if (_object is GlobalMethodCallInfo)
+            {
+                PushClosure(_instance, _object as GlobalMethodCallInfo);
+            }
             else if (_object is MulticastDelegate) // Func<> and Action<>
             {
                 PushClosure(_instance, _object as MulticastDelegate);
@@ -259,7 +270,7 @@ namespace bLua.NativeLua
             else
             {
                 LuaLibAPI.lua_pushnil(_instance.state);
-                _instance.Error($"{bLuaError.error_unrecognizedStackPush}{_object.GetType()}");
+                _instance.ErrorFromCSharp($"{bLuaError.error_unrecognizedStackPush}{_object.GetType()}");
             }
         }
 

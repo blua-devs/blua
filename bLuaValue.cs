@@ -10,8 +10,6 @@ namespace bLua
 {
     public class bLuaValue : IDisposable
     {
-        public static int totalCreated = 0;
-
         public static int NOREF = -2;
         public static int REFNIL = -1;
 
@@ -144,29 +142,20 @@ namespace bLua
 
         public bLuaValue()
         {
-            FinishConstruction();
             referenceID = REFNIL;
-
             instance = null;
         }
 
         public bLuaValue(bLuaInstance _instance)
         {
-            FinishConstruction();
             referenceID = REFNIL;
             instance = _instance;
         }
 
         public bLuaValue(bLuaInstance _instance, int _refid)
         {
-            FinishConstruction();
             referenceID = _refid;
             instance = _instance;
-        }
-
-        void FinishConstruction()
-        {
-            ++totalCreated;
         }
 
         ~bLuaValue()
@@ -180,7 +169,7 @@ namespace bLua
             System.GC.SuppressFinalize(this);
         }
 
-        void Dispose(bool _deterministic)
+        protected virtual void Dispose(bool _deterministic)
         {
             if (referenceID != NOREF && referenceID != REFNIL)
             {
@@ -188,13 +177,10 @@ namespace bLua
                 {
                     Lua.DestroyDynValue(instance, referenceID);
                 }
-                // remnant from C#-managed GC
-                /*
                 else
                 {
-                    deleteQueue.Enqueue(refid);
+                    instance.MarkForCSharpGarbageCollection(referenceID);
                 }
-                */
                 referenceID = NOREF;
             }
         }
@@ -599,6 +585,14 @@ namespace bLua
                 return instance.Call(this, _args);
             }
             return null;
+        }
+
+        public void CallCoroutine(params object[] _args)
+        {
+            if (instance != null)
+            {
+                instance.CallCoroutine(this, _args);
+            }
         }
 
         public int Length

@@ -36,6 +36,9 @@ namespace bLua.NativeLua
         public static extern int lua_rawget(System.IntPtr state, int idx);
 
         [DllImport(Lua.LUA_DLL)]
+        public static extern void lua_rawset(System.IntPtr state, int idx);
+
+        [DllImport(Lua.LUA_DLL)]
         public static extern int lua_getglobal(System.IntPtr state, string key);
 
         [DllImport(Lua.LUA_DLL)]

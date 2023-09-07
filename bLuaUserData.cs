@@ -10,7 +10,7 @@ using bLua.Internal;
 
 namespace bLua
 {
-    [AttributeUsage(AttributeTargets.Method | AttributeTargets.Property | AttributeTargets.Field)]
+    [AttributeUsage(AttributeTargets.Method | AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Constructor)]
     public class bLuaHiddenAttribute : Attribute
     {
 
@@ -59,7 +59,10 @@ namespace bLua
             Double,
             Bool,
             Float,
-            Params
+            Params,
+            Array,
+            List,
+            Dictionary
         }
 
         public ParamType returnType;
@@ -68,6 +71,11 @@ namespace bLua
         public object[] defaultArgs;
 
         public bLuaValue closure;
+    }
+
+    public class GlobalMethodCallInfo : MethodCallInfo
+    {
+        public object objectInstance;
     }
 
     public class DelegateCallInfo : MethodCallInfo
@@ -118,6 +126,51 @@ namespace bLua
                 case MethodCallInfo.ParamType.Str:
                     Lua.PushOntoStack(_instance, (string)_result);
                     return;
+                case MethodCallInfo.ParamType.Array:
+                    if (!_result.GetType().IsArray)
+                    {
+                        goto default;
+                    }
+
+                    bLuaValue arrayTable = bLuaValue.CreateTable(_instance);
+                    foreach (object o in (_result as object[]))
+                    {
+                        arrayTable.Append(o);
+                    }
+
+                    Lua.PushOntoStack(_instance, arrayTable);
+
+                    return;
+                case MethodCallInfo.ParamType.List:
+                    if (!_result.GetType().IsGenericType || _result.GetType().GetGenericTypeDefinition() != typeof(List<>))
+                    {
+                        goto default;
+                    }
+
+                    bLuaValue listTable = bLuaValue.CreateTable(_instance);
+                    foreach (object o in _result as IEnumerable)
+                    {
+                        listTable.Append(o);
+                    }
+
+                    Lua.PushOntoStack(_instance, listTable);
+
+                    return;
+                case MethodCallInfo.ParamType.Dictionary:
+                    if (!_result.GetType().IsGenericType || _result.GetType().GetGenericTypeDefinition() != typeof(Dictionary<,>))
+                    {
+                        goto default;
+                    }
+
+                    bLuaValue dictionaryTable = bLuaValue.CreateTable(_instance);
+                    foreach (object key in (_result as IDictionary).Keys)
+                    {
+                        dictionaryTable.Set(key, (_result as IDictionary)[key]);
+                    }
+
+                    Lua.PushOntoStack(_instance, dictionaryTable);
+
+                    return;
                 case MethodCallInfo.ParamType.UserDataClass:
                     PushNewUserData(_instance, _result);
                     return;
@@ -133,7 +186,7 @@ namespace bLua
             int ntype = LuaLibAPI.lua_getiuservalue(_instance.state, _nstack, 1);
             if (ntype != (int)DataType.Number)
             {
-                _instance.Error($"{bLuaError.error_invalidUserdata}");
+                _instance.ErrorFromCSharp($"{bLuaError.error_invalidUserdata}");
                 Lua.PopStack(_instance);
                 return null;
             }
@@ -230,8 +283,15 @@ namespace bLua
                     {
                         liveObjects[i] = _instance.liveObjects[i];
                     }
-
                     _instance.liveObjects = liveObjects;
+
+                    // keep syntax sugar proxies inline with live objects
+                    object[] syntaxSugarProxies = new object[_instance.syntaxSugarProxies.Length * 2];
+                    for (int i = 0; i < _instance.syntaxSugarProxies.Length; ++i)
+                    {
+                        syntaxSugarProxies[i] = _instance.syntaxSugarProxies[i];
+                    }
+                    _instance.syntaxSugarProxies = syntaxSugarProxies;
                 }
 
                 objIndex = _instance.nextLiveObject;
@@ -243,8 +303,6 @@ namespace bLua
             LuaLibAPI.lua_setiuservalue(_instance.state, -2, 1);
             Lua.PushStack(_instance, entry.metatable);
             LuaLibAPI.lua_setmetatable(_instance.state, -2);
-
-            string msg = Lua.TraceMessage(_instance, "live object");
 
             _instance.liveObjects[objIndex] = _object;
         }
@@ -519,6 +577,91 @@ namespace bLua
             _instance.registeredEntries.Add(entry);
         }
 
+        /// <summary> Registers all methods on a class as global functions in Lua. If _environment is null, the methods will be registered
+        /// as global in the global environment. </summary>
+        public static void RegisterAllMethodsAsGlobal(bLuaInstance _instance, object _object, bLuaValue _environment = null)
+        {
+            if (_object == null)
+            {
+                Debug.LogError("Can't register all methods as global, object is null");
+                return;
+            }
+
+            if (_environment == null)
+            {
+                Debug.LogError("Can't register all methods as global, environment is null");
+                return;
+            }
+
+            MethodInfo[] methods = _object.GetType().GetMethods(BindingFlags.Public | BindingFlags.DeclaredOnly | BindingFlags.Static);
+            for (int i = 0; i < methods.Length; i++)
+            {
+                GlobalMethodCallInfo info = CreateGlobalMethodCallInfo(_instance, methods[i], _object);
+                if (info == null)
+                {
+                    continue;
+                }
+
+                _environment.Set(methods[i].Name, info);
+            }
+        }
+
+        static GlobalMethodCallInfo CreateGlobalMethodCallInfo(bLuaInstance _instance, MethodInfo _methodInfo, object _object)
+        {
+            Attribute hiddenAttr = _methodInfo.GetCustomAttribute(typeof(bLuaHiddenAttribute));
+            if (hiddenAttr != null)
+            {
+                return null;
+            }
+
+            ParameterInfo[] methodParams = _methodInfo.GetParameters();
+
+            bool isExtensionMethod = _methodInfo.IsDefined(typeof(ExtensionAttribute), true);
+            if (isExtensionMethod)
+            {
+                Debug.LogError($"Tried to register extension method ({_methodInfo.Name}) as a global method. This is not allowed.");
+                return null;
+            }
+
+            MethodCallInfo.ParamType[] argTypes = new MethodCallInfo.ParamType[methodParams.Length];
+            object[] defaultArgs = new object[methodParams.Length];
+            for (int i = 0; i < methodParams.Length; ++i)
+            {
+                argTypes[i] = SystemTypeToParamType(_instance, methodParams[i].ParameterType);
+
+                if (i == methodParams.Length - 1 && methodParams[i].GetCustomAttribute(typeof(ParamArrayAttribute)) != null)
+                {
+                    argTypes[i] = MethodCallInfo.ParamType.Params;
+                }
+
+                if (methodParams[i].HasDefaultValue)
+                {
+                    defaultArgs[i] = methodParams[i].DefaultValue;
+                }
+                else if (argTypes[i] == MethodCallInfo.ParamType.LuaValue)
+                {
+                    defaultArgs[i] = bLuaValue.Nil;
+                }
+                else
+                {
+                    defaultArgs[i] = null;
+                }
+            }
+
+            MethodCallInfo.ParamType returnType = SystemTypeToParamType(_instance, _methodInfo.ReturnType);
+
+            GlobalMethodCallInfo methodCallInfo = new GlobalMethodCallInfo()
+            {
+                methodInfo = _methodInfo,
+                returnType = returnType,
+                argTypes = argTypes,
+                defaultArgs = defaultArgs,
+                objectInstance = _object
+            };
+
+            return methodCallInfo;
+        }
+
         public static object PopStackIntoParamType(bLuaInstance _instance, MethodCallInfo.ParamType _paramType)
         {
             switch (_paramType)
@@ -533,11 +676,17 @@ namespace bLua
                     return Lua.PopInteger(_instance);
                 case MethodCallInfo.ParamType.Str:
                     return Lua.PopString(_instance);
+                case MethodCallInfo.ParamType.Array:
+                    return Lua.PopList(_instance).ToArray();
+                case MethodCallInfo.ParamType.List:
+                    return Lua.PopList(_instance);
+                case MethodCallInfo.ParamType.Dictionary:
+                    return Lua.PopDict(_instance);
                 case MethodCallInfo.ParamType.LuaValue:
                     return Lua.PopStackIntoValue(_instance);
                 case MethodCallInfo.ParamType.UserDataClass:
-                    object o = Lua.PopStackIntoValue(_instance).Object;
-                    return o != null ? Convert.ChangeType(o, o.GetType()) : o;
+                    object userDataClassObject = Lua.PopStackIntoValue(_instance).Object;
+                    return userDataClassObject != null ? Convert.ChangeType(userDataClassObject, userDataClassObject.GetType()) : userDataClassObject;
                 default:
                     Lua.PopStack(_instance);
                     return null;
@@ -569,6 +718,18 @@ namespace bLua
             else if (_type == typeof(bool))
             {
                 return MethodCallInfo.ParamType.Bool;
+            }
+            else if (_type.IsArray)
+            {
+                return MethodCallInfo.ParamType.Array;
+            }
+            else if (_type.IsGenericType && (_type.GetGenericTypeDefinition() == typeof(List<>)))
+            {
+                return MethodCallInfo.ParamType.List;
+            }
+            else if (_type.IsGenericType && (_type.GetGenericTypeDefinition() == typeof(Dictionary<,>)))
+            {
+                return MethodCallInfo.ParamType.Dictionary;
             }
             else if (_type == typeof(bLuaValue))
             {
