@@ -9,7 +9,6 @@ namespace bLua
     {
         public bLuaException(string message) : base(message)
         {
-
         }
     }
 } // bLua namespace

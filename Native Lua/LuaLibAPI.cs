@@ -1,7 +1,5 @@
-using System.Collections;
-using System.Collections.Generic;
+using System;
 using System.Runtime.InteropServices;
-using UnityEngine;
 
 namespace bLua.NativeLua
 {
@@ -9,209 +7,168 @@ namespace bLua.NativeLua
     public static class LuaLibAPI
     {
         [DllImport(Lua.LUA_DLL)]
-        public static extern void lua_createtable(System.IntPtr state, int narray, int ntable);
+        public static extern void lua_setfield(IntPtr L, int index, IntPtr k);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern int lua_geti(System.IntPtr state, int stack_index, int table_index);
+        public static extern int lua_getfield(IntPtr L, int index, IntPtr k);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern void lua_seti(System.IntPtr state, int stack_index, int table_index);
-
-        //returns the length of the string or table.
-        [DllImport(Lua.LUA_DLL)]
-        public static extern uint lua_rawlen(System.IntPtr state, int stack_index);
+        public static extern void lua_setglobal(IntPtr L, string name);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern int lua_next(System.IntPtr state, int idx);
-
-        //Does the equivalent to t[k] = v, where t is the value at the given index, v is the value on the top of the stack, and k is the value just below the top.
-        [DllImport(Lua.LUA_DLL)]
-        public static extern void lua_settable(System.IntPtr state, int idx);
-
-        //Pushes onto the stack the value t[k], where t is the value at the given index and k is the value on the top of the stack.
-        [DllImport(Lua.LUA_DLL)]
-        public static extern int lua_gettable(System.IntPtr state, int idx);
+        public static extern int lua_getglobal(IntPtr L, string name);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern int lua_rawget(System.IntPtr state, int idx);
+        public static extern void lua_seti(IntPtr L, int index, int i);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern void lua_rawset(System.IntPtr state, int idx);
+        public static extern int lua_geti(IntPtr L, int index, int i);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern int lua_getglobal(System.IntPtr state, string key);
+        public static extern int lua_setiuservalue(IntPtr L, int index, int n);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern void lua_setglobal(System.IntPtr state, string key);
-
-        // returns a char*
-        [DllImport(Lua.LUA_DLL)]
-        public static extern System.IntPtr lua_typename(System.IntPtr state, int idx);
+        public static extern int lua_getiuservalue(IntPtr L, int index, int n);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern System.IntPtr lua_close(System.IntPtr state);
-
-        //push values onto stack.
-        [DllImport(Lua.LUA_DLL)]
-        public static extern void lua_pushnil(System.IntPtr state);
+        public static extern int lua_setmetatable(IntPtr L, int index);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern void lua_pushnumber(System.IntPtr state, double n);
+        public static extern int lua_getmetatable(IntPtr L, int index);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern void lua_pushinteger(System.IntPtr state, int n);
+        public static extern void lua_settable(IntPtr L, int index);
 
-        public static void lua_pushint64(System.IntPtr state, long n)
-        {
-            int r;
-            if (!int.TryParse(n.ToString(), out r))
-            {
-                r = int.MaxValue;
-            }
-            lua_pushinteger(state, r);
-        }
-        public static void lua_pushuint(System.IntPtr state, uint n)
-        {
-            lua_pushinteger(state, unchecked((int)n));
-        }
-        public static void lua_pushuint64(System.IntPtr state, ulong n)
-        {
-            lua_pushint64(state, unchecked((long)n + long.MinValue));
-        }
+        [DllImport(Lua.LUA_DLL)]
+        public static extern int lua_gettable(IntPtr L, int index);
+
+        [DllImport(Lua.LUA_DLL)]
+        public static extern void lua_settop(IntPtr L, int index);
+
+        [DllImport(Lua.LUA_DLL)]
+        public static extern int lua_gettop(IntPtr L);
+
+        [DllImport(Lua.LUA_DLL)]
+        public static extern IntPtr lua_setupvalue(IntPtr L, int funcindex, int n);
+
+        [DllImport(Lua.LUA_DLL)]
+        public static extern void lua_getupvalue(IntPtr L, int funcindex, int n);
+
+        [DllImport(Lua.LUA_DLL)]
+        public static extern int lua_checkstack(IntPtr L, int n);
+
+        [DllImport(Lua.LUA_DLL)]
+        public static extern IntPtr lua_close(IntPtr L);
+
+        [DllImport(Lua.LUA_DLL)]
+        public static extern void lua_createtable(IntPtr L, int narr, int nrec);
+
+        [DllImport(Lua.LUA_DLL)]
+        public static extern int lua_isyieldable(IntPtr L);
+
+        [DllImport(Lua.LUA_DLL)]
+        public static extern IntPtr lua_newthread(IntPtr L);
+
+        [DllImport(Lua.LUA_DLL)]
+        public static extern IntPtr lua_newuserdatauv(IntPtr L, IntPtr size, int nuvalue);
+
+        [DllImport(Lua.LUA_DLL)]
+        public static extern int lua_next(IntPtr L, int index);
+
+        [DllImport(Lua.LUA_DLL)]
+        public static extern int lua_pcallk(IntPtr L, int nargs, int nresults, int msgh, long ctx, IntPtr k);
+
+        [DllImport(Lua.LUA_DLL)]
+        public static extern void lua_pushboolean(IntPtr L, int b);
+
+        [DllImport(Lua.LUA_DLL)]
+        public static extern void lua_pushcclosure(IntPtr L, IntPtr fn, int n);
+
+        [DllImport(Lua.LUA_DLL)]
+        public static extern void lua_pushinteger(IntPtr L, int n);
 
         [DllImport(Lua.LUA_DLL, CharSet = CharSet.Ansi)]
-        public static extern void lua_pushlstring(System.IntPtr state, System.IntPtr s, ulong len);
-
-        public static void lua_pushstring(System.IntPtr state, string str)
-        {
-            lua_pushlstring(state, Lua.StringToIntPtr(str), (ulong)Lua.StrToUTF8(str).Length);
-        }
-        public static void lua_pushbytes(System.IntPtr state, byte[] bytes)
-        {
-            lua_pushstring(state, System.Text.Encoding.Default.GetString(bytes));
-        }
+        public static extern void lua_pushlstring(IntPtr L, IntPtr s, ulong len);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern void lua_pushboolean(System.IntPtr state, int b);
-
-        public static void lua_pushboolean(System.IntPtr state, bool b)
-        {
-            lua_pushboolean(state, b ? 1 : 0);
-        }
+        public static extern void lua_pushnil(IntPtr L);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern void lua_pushvalue(System.IntPtr state, int index);
+        public static extern void lua_pushnumber(IntPtr L, double n);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern void lua_xmove(System.IntPtr state, System.IntPtr to, int n);
-
-        //find type of value on stack.
-        [DllImport(Lua.LUA_DLL)]
-        public static extern int lua_type(System.IntPtr state, int idx);
-
-        //inspect values on stack.
-        [DllImport(Lua.LUA_DLL)]
-        public static extern int lua_toboolean(System.IntPtr state, int idx);
+        public static extern void lua_pushvalue(IntPtr L, int index);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern double lua_tonumberx(System.IntPtr state, int n, System.IntPtr /*|int*|*/ isnum);
+        public static extern int lua_rawequal(IntPtr L, int index1, int index2);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern int lua_tointegerx(System.IntPtr state, int n, System.IntPtr /*|int*|*/ isnum);
+        public static extern int lua_rawgeti(IntPtr L, int index, int n);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern System.IntPtr lua_tolstring(System.IntPtr state, int n, StrLen /*|size_t*|*/ len);
+        public static extern uint lua_rawlen(IntPtr L, int index);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern System.IntPtr lua_tothread(System.IntPtr state, int n);
-
-        //void lua_pushcclosure (lua_State* L, lua_CFunction fn, int n);
-        [DllImport(Lua.LUA_DLL)]
-        public static extern void lua_pushcclosure(System.IntPtr state, System.IntPtr fn, int n);
+        public static extern int lua_resume(IntPtr L, IntPtr from, int nargs, out int nresults);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern System.IntPtr lua_newuserdatauv(System.IntPtr state, System.IntPtr sz, int nuvalue);
+        public static extern int lua_status(IntPtr L);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern int lua_getiuservalue(System.IntPtr state, int idx, int n);
+        public static extern int lua_toboolean(IntPtr L, int index);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern int lua_setiuservalue(System.IntPtr state, int idx, int n);
-
-        // returns a char*
-        [DllImport(Lua.LUA_DLL)]
-        public static extern System.IntPtr lua_setupvalue(System.IntPtr state, int funcindex, int n);
+        public static extern int lua_tointegerx(IntPtr L, int index, IntPtr isnum);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern int lua_setmetatable(System.IntPtr state, int objindex);
+        public static extern IntPtr lua_tolstring(IntPtr L, int index, StrLen len);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern int lua_getmetatable(System.IntPtr state, int objindex);
+        public static extern double lua_tonumberx(IntPtr L, int index, IntPtr isnum);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern void lua_pushlightuserdata(System.IntPtr state, System.IntPtr addr);
+        public static extern IntPtr lua_topointer(IntPtr L, int index);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern void luaopen_base(System.IntPtr state);
+        public static extern IntPtr lua_tothread(IntPtr L, int index);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern void luaopen_coroutine(System.IntPtr state);
+        public static extern int lua_type(IntPtr L, int tp);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern void luaopen_table(System.IntPtr state);
+        public static extern void lua_xmove(IntPtr from, IntPtr to, int n);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern void luaopen_io(System.IntPtr state);
+        public static extern int lua_yieldk(IntPtr L, int nresults, IntPtr ctx, IntPtr k);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern void luaopen_os(System.IntPtr state);
+        public static extern void luaopen_base(IntPtr L);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern void luaopen_string(System.IntPtr state);
+        public static extern void luaopen_coroutine(IntPtr L);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern void luaopen_utf8(System.IntPtr state);
+        public static extern void luaopen_debug(IntPtr L);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern void luaopen_math(System.IntPtr state);
+        public static extern void luaopen_io(IntPtr L);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern void luaopen_debug(System.IntPtr state);
+        public static extern void luaopen_math(IntPtr L);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern void luaopen_package(System.IntPtr state);
+        public static extern void luaopen_os(IntPtr L);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern int lua_pcall(System.IntPtr state, int nargs, int nresults, int msgh);
+        public static extern void luaopen_package(IntPtr L);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern int lua_pcallk(System.IntPtr state, int nargs, int nresults, int msgh, long ctx, System.IntPtr k);
+        public static extern void luaopen_string(IntPtr L);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern int lua_resume(System.IntPtr state, System.IntPtr from, int nargs, CoroutineResult result);
+        public static extern void luaopen_table(IntPtr L);
 
         [DllImport(Lua.LUA_DLL)]
-        public static extern void lua_settop(System.IntPtr state, int n);
-
-        [DllImport(Lua.LUA_DLL)]
-        public static extern void lua_rotate(System.IntPtr state, int idx, int n);
-
-        [DllImport(Lua.LUA_DLL)]
-        public static extern int lua_gettop(System.IntPtr state);
-
-        [DllImport(Lua.LUA_DLL)]
-        public static extern int lua_checkstack(System.IntPtr state, int n);
-
-        [DllImport(Lua.LUA_DLL)]
-        public static extern int lua_rawgeti(System.IntPtr state, int idx, int n);
-
-        [DllImport(Lua.LUA_DLL)]
-        public static extern int lua_rawequal(System.IntPtr state, int idx1, int idx2);
-
-        [DllImport(Lua.LUA_DLL)]
-        public static extern int lua_compare(System.IntPtr state, int idx1, int idx2, int op);
-
-        [DllImport(Lua.LUA_DLL)]
-        public static extern void lua_setfield(System.IntPtr state, int idx, System.IntPtr k);
+        public static extern void luaopen_utf8(IntPtr L);
     }
 } // bLua.NativeLua namespace

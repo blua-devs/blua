@@ -1,11 +1,8 @@
-using System;
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace bLua.ExampleUserData
 {
-    [bLuaUserData(reliantUserData = new Type[1] { typeof(bLuaGameObject) })]
+    [bLuaUserData(reliantUserData = new[] { typeof(bLuaGameObject) })]
     public class bLuaGameObjectLibrary
     {
         public static bLuaGameObject New()
